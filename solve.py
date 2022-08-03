@@ -45,10 +45,10 @@ def in_range(low, high):
 @click.option(
     "-o",
     "--output",
-    "output_file",
-    default="result.png",
+    "output_base",
+    default="results",
     type=str,
-    help="PNG file write output to",
+    help="Base name of output files.",
 )
 @click.option(
     "-d",
@@ -116,16 +116,16 @@ def in_range(low, high):
     help="Bing Maps API Key used to auto-generate cost matrix using distances.",
 )
 @click.option(
-    "--bing-cost",
-    "bing_cost",
+    "--cost-property",
+    "cost_property",
     default="time",
     type=click.Choice(["distance", "time"]),
-    help="Bing Maps API Key used to auto-generate cost matrix using distances.",
+    help="Compute cost matrix using distances or travel time.",
 )
 def find_optimal_scheduling(
     sites_file,
     costs_file,
-    output_file,
+    output_base,
     n_days,
     min_stops_per_day,
     max_stops_per_day,
@@ -134,7 +134,7 @@ def find_optimal_scheduling(
     quiet=False,
     bing_maps_api_key=None,
     bing_travel_mode="driving",
-    bing_cost="time",
+    cost_property="time",
 ):
     verbose = not quiet
 
@@ -145,7 +145,7 @@ def find_optimal_scheduling(
         pprint.pprint(sites, indent=4)
 
     if costs_file:
-        C = load_cost_data(costs_file)
+        C = load_cost_data(costs_file, cost_property)
     elif bing_maps_api_key:
         if not _check_can_use_bing(sites):
             raise click.BadArgumentUsage(
@@ -157,7 +157,9 @@ def find_optimal_scheduling(
                     sites_file
                 )
             )
-        C = bing_maps_cost_data(sites, bing_travel_mode, bing_cost, bing_maps_api_key)
+        C = bing_maps_cost_data(
+            sites, bing_travel_mode, cost_property, bing_maps_api_key
+        )
     else:
         raise click.BadArgumentUsage(
             """
@@ -205,7 +207,7 @@ def find_optimal_scheduling(
 
     # Build the schedule for the annealing parameter
     annealing_schedule = annealing_scale * np.logspace(
-        start=0, stop=1000, num=annealing_iters, base=annealing_param_decay
+        start=0, stop=1100, num=annealing_iters, base=annealing_param_decay
     )
 
     #
@@ -254,14 +256,14 @@ def find_optimal_scheduling(
 
         cost_history[i] = total_cost(C, state)
         if verbose and i % print_interval == print_interval - 1:
-            mean_cost = np.mean(cost[i - print_interval + 1 : i])
+            mean_cost = np.mean(cost_history[i - print_interval + 1 : i])
             print(
                 "step={}, annealing_param={}, cost={}".format(
                     i + 1, round(annealing_param, 4), round(mean_cost, 4)
                 )
             )
 
-    save_results(sites, state, cost_history, output_file)
+    save_results(sites, state, cost_history, output_base)
 
 
 def initial_state(n_sites, n_days, max_stops_per_day):
@@ -287,34 +289,48 @@ def initial_state(n_sites, n_days, max_stops_per_day):
     return np.hstack((zero_buf, slots, zero_buf)).astype(int)
 
 
-def save_results(meta, state, cost, output_file):
+def save_results(sites, state, cost, output_base):
     print("======== SOLUTION =========")
     for day_i, stops in enumerate(state):
         print("Day", day_i + 1)
         for j, site_j in enumerate(stops[stops >= 0]):
-            print(f"{j+1}.", meta[site_j]["name"])
+            print(f"{j+1}.", sites[site_j]["name"])
         print()
     print("===========================")
+
+    # Create a new output file containing the schedule
+
+    df = pd.DataFrame(sites)
+    day, stop = [0], [0]
+    for site_i in range(1, len(sites)):
+        day_i, stop_i = np.where(state == site_i)
+        day.append(day_i[0] + 1)
+        stop.append(stop_i[0] + 1)
+
+    df["day"] = day
+    df["stop"] = stop
+
+    df.to_csv(output_base + ".csv", index=False)
 
     plt.plot(np.linspace(0, len(cost), num=len(cost)), cost, label="Travel Time")
     plt.xlabel("Optimization Step")
     plt.ylabel("Total Travel Time")
     plt.title("Site Schedule Optimization")
     plt.legend()
-    plt.savefig(output_file)
+    plt.savefig(output_base + ".png")
 
 
 def load_site_data(filepath):
     return pd.read_csv(filepath).to_dict(orient="records")
 
 
-def load_cost_data(filepath):
+def load_cost_data(filepath, cost_property):
     df = pd.read_csv(filepath)
     i = df["site_1"].values
     j = df["site_2"].values
     n_sites = np.unique(np.concatenate((i, j))).size
     C = np.zeros(shape=(n_sites, n_sites))
-    C[i, j] = df["cost"].values
+    C[i, j] = df[cost_property].values
     return C
 
 
