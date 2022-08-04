@@ -1,14 +1,20 @@
 import sys
 import os
 import math
+import json
+import hashlib
+import pathlib
 import itertools
 import pprint
+import datetime
+import dateutil.parser
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 import click
 import requests
+import humanize
 
 
 def in_range(low, high):
@@ -22,13 +28,28 @@ def in_range(low, high):
     return validate_range
 
 
+def parse_datetime_str(ctx, param, value):
+    if value is None:
+        return None
+    try:
+        dt = dateutil.parser.parse(value)
+        if dt.tzinfo is None:
+            # Attach current time zone if not present
+            dt = dt.astimezone()
+        return dt
+    except:
+        raise click.BadParameter(
+            f"Could not parse datetime from '{value}' ", ctx, param
+        )
+
+
 @click.command(
     name="solve",
     help="Find a multi-day schedule optimizer for visiting survey locations.",
     context_settings={"show_default": True},
 )
 @click.option(
-    "-s",
+    "-i",
     "--site-data",
     "sites_file",
     required=True,
@@ -116,11 +137,32 @@ def in_range(low, high):
     help="Bing Maps API Key used to auto-generate cost matrix using distances.",
 )
 @click.option(
-    "--cost-property",
-    "cost_property",
+    "--cost-type",
+    "cost_type",
     default="time",
     type=click.Choice(["distance", "time"]),
     help="Compute cost matrix using distances or travel time.",
+)
+@click.option(
+    "-s",
+    "--start-datetime",
+    "start_datetime",
+    default=None,
+    type=str,
+    callback=parse_datetime_str,
+    help="The date and time of the begin of the schedule.",
+)
+@click.option(
+    "-dc",
+    "--disable-cache",
+    is_flag=True,
+    help="Disables any caching.",
+)
+@click.option(
+    "-iN",
+    "--ignore-node-cost",
+    is_flag=True,
+    help="Ignores the node cost values during calculation caching.",
 )
 def find_optimal_scheduling(
     sites_file,
@@ -134,18 +176,21 @@ def find_optimal_scheduling(
     quiet=False,
     bing_maps_api_key=None,
     bing_travel_mode="driving",
-    cost_property="time",
+    cost_type="time",
+    start_datetime=None,
+    disable_cache=False,
+    ignore_node_cost=False,
 ):
     verbose = not quiet
 
-    sites = load_site_data(sites_file)
+    sites, C_node = load_site_data(sites_file, ignore_node_cost)
 
     if verbose:
         print("sites =")
         pprint.pprint(sites, indent=4)
 
     if costs_file:
-        C = load_cost_data(costs_file, cost_property)
+        C_edge = load_cost_data(costs_file, cost_type)
     elif bing_maps_api_key:
         if not _check_can_use_bing(sites):
             raise click.BadArgumentUsage(
@@ -157,8 +202,12 @@ def find_optimal_scheduling(
                     sites_file
                 )
             )
-        C = bing_maps_cost_data(
-            sites, bing_travel_mode, cost_property, bing_maps_api_key
+        C_edge = get_bing_maps_edge_costs(
+            sites=sites,
+            travel_mode=bing_travel_mode,
+            cost_type=cost_type,
+            start_time=start_datetime,
+            api_key=bing_maps_api_key,
         )
     else:
         raise click.BadArgumentUsage(
@@ -166,18 +215,22 @@ def find_optimal_scheduling(
             Must pass either a cost matrix using '--costs-data' option or use
             the BING Maps API to compute a cost matrix by using '--bing-maps-api-key',
             '--bing-travel-mode', and '--bing-cost' options.
+
+            You can also set the environmental variable `BING_MAPS_API_KEY`.
             """
         )
 
     if verbose:
-        print("C =")
-        pprint.pprint(C)
+        print("C_edge =")
+        pprint.pprint(C_edge)
+        print("C_node =")
+        pprint.pprint(C_node)
 
-    n_sites = len(C)
+    n_sites = len(C_edge)
     n_slots = max_stops_per_day * n_days
     print_interval = annealing_iters // 10
 
-    if len(C) != len(sites):
+    if len(C_edge) != len(sites):
         raise click.BadArgumentUsage(
             """
             The sites data and costs data do not contain the same number of sites.
@@ -203,11 +256,16 @@ def find_optimal_scheduling(
     if verbose:
         print("initial_state =\n", state)
 
-    annealing_scale = total_cost(C, state)
+    annealing_scale = total_cost(C_edge, C_node, state)
 
     # Build the schedule for the annealing parameter
+    # final = 15 / (1 - annealing_param_decay)
+    # annealing_schedule = annealing_scale * np.logspace(
+    #     start=0, stop=final, num=annealing_iters, base=annealing_param_decay
+    # )
+
     annealing_schedule = annealing_scale * np.logspace(
-        start=0, stop=1100, num=annealing_iters, base=annealing_param_decay
+        start=0, stop=20, num=annealing_iters, base=0.5
     )
 
     #
@@ -243,9 +301,13 @@ def find_optimal_scheduling(
 
     for i, annealing_param in enumerate(annealing_schedule):
         for (day1, stop1, day2, stop2) in zip(*rand_dofs()):
-            C1 = daily_cost(C, state[day1]) + daily_cost(C, state[day2])
+            C1 = daily_cost(C_edge, C_node, state[day1]) + daily_cost(
+                C_edge, C_node, state[day2]
+            )
             swap(day1, stop1, day2, stop2)
-            C2 = daily_cost(C, state[day1]) + daily_cost(C, state[day2])
+            C2 = daily_cost(C_edge, C_node, state[day1]) + daily_cost(
+                C_edge, C_node, state[day2]
+            )
             dC = C2 - C1
 
             # Stochastically keep (+) change in E (total cost).
@@ -254,7 +316,7 @@ def find_optimal_scheduling(
             if probability(dC, annealing_param) <= np.random.uniform(0, 1):
                 swap(day1, stop1, day2, stop2)
 
-        cost_history[i] = total_cost(C, state)
+        cost_history[i] = total_cost(C_edge, C_node, state)
         if verbose and i % print_interval == print_interval - 1:
             mean_cost = np.mean(cost_history[i - print_interval + 1 : i])
             print(
@@ -263,7 +325,7 @@ def find_optimal_scheduling(
                 )
             )
 
-    save_results(sites, state, cost_history, output_base)
+    save_results(sites, state, cost_history, output_base, C_edge, C_node)
 
 
 def initial_state(n_sites, n_days, max_stops_per_day):
@@ -289,10 +351,14 @@ def initial_state(n_sites, n_days, max_stops_per_day):
     return np.hstack((zero_buf, slots, zero_buf)).astype(int)
 
 
-def save_results(sites, state, cost, output_base):
+def save_results(sites, state, cost_history, output_base, C_edge, C_node):
     print("======== SOLUTION =========")
     for day_i, stops in enumerate(state):
-        print("Day", day_i + 1)
+        cost_disp = humanize.precisedelta(
+            value=datetime.timedelta(minutes=daily_cost(C_edge, C_node, stops)),
+            minimum_unit="minutes",
+        )
+        print("Day {} ({})".format(day_i + 1, cost_disp))
         for j, site_j in enumerate(stops[stops >= 0]):
             print(f"{j+1}.", sites[site_j]["name"])
         print()
@@ -311,8 +377,8 @@ def save_results(sites, state, cost, output_base):
     df["stop"] = stop
 
     df.to_csv(output_base + ".csv", index=False)
-
-    plt.plot(np.linspace(0, len(cost), num=len(cost)), cost, label="Travel Time")
+    n_steps = len(cost_history)
+    plt.plot(np.linspace(0, n_steps, num=n_steps), cost_history, label="Travel Time")
     plt.xlabel("Optimization Step")
     plt.ylabel("Total Travel Time")
     plt.title("Site Schedule Optimization")
@@ -320,21 +386,59 @@ def save_results(sites, state, cost, output_base):
     plt.savefig(output_base + ".png")
 
 
-def load_site_data(filepath):
-    return pd.read_csv(filepath).to_dict(orient="records")
+def load_site_data(filepath, ignore_node_cost):
+    df = pd.read_csv(filepath)
+    costs = np.zeros(len(df))
+    if "cost" in df.columns and not ignore_node_cost:
+        costs = df["cost"].values
+    return df.to_dict(orient="records"), costs
 
 
-def load_cost_data(filepath, cost_property):
+def load_cost_data(filepath, cost_type):
     df = pd.read_csv(filepath)
     i = df["site_1"].values
     j = df["site_2"].values
     n_sites = np.unique(np.concatenate((i, j))).size
     C = np.zeros(shape=(n_sites, n_sites))
-    C[i, j] = df[cost_property].values
+    C[i, j] = df[cost_type].values
     return C
 
 
-def bing_maps_cost_data(sites, travel_mode, cost_property, api_key):
+def daily_cost(C_edge, C_node, stops):
+    path = stops[stops > -1]
+    edges_cost = sum(C_edge[i, j] for i, j in _pairs(path))
+    nodes_cost = sum(C_node[i] for i in path) if C_node is not None else 0
+    return edges_cost + nodes_cost
+
+
+def total_cost(C_edge, C_node, state):
+    return sum(daily_cost(C_edge, C_node, stops) for stops in state)
+
+
+def get_bing_maps_edge_costs(
+    sites, travel_mode, cost_type, api_key, start_time=None, force=False
+):
+
+    # Caching saves us from making the same requests
+    # over and over during testing and development.
+    _cache_dir = pathlib.Path(".cache")
+
+    def _cache_key(d):
+        return hashlib.md5(json.dumps(d).encode()).hexdigest()
+
+    def _write_cache(key, resp_json):
+        if not _cache_dir.exists():
+            _cache_dir.mkdir()
+        cache_file = _cache_dir / f"{key}.json"
+        cache_file.write_text(json.dumps(resp_json))
+
+    def _read_cache(key):
+        cache_file = _cache_dir / f"{key}.json"
+        if not force and cache_file.exists():
+            print("BING Matrix read from cache")
+            return json.loads(cache_file.read_text())
+        return None
+
     try:
         url = (
             f"https://dev.virtualearth.net/REST/v1/Routes/DistanceMatrix?key={api_key}"
@@ -346,9 +450,16 @@ def bing_maps_cost_data(sites, travel_mode, cost_property, api_key):
             "destinations": sites,
         }
 
-        response = requests.post(url, json=payload)
-        response.raise_for_status()
-        data = response.json()
+        if start_time is not None:
+            payload["startTime"] = start_time.isoformat()
+
+        cache_key = _cache_key(payload)
+        data = _read_cache(cache_key)
+        if data is None:
+            response = requests.post(url, json=payload)
+            response.raise_for_status()
+            data = response.json()
+            _write_cache(cache_key, data)
 
         C = np.zeros((len(sites), len(sites)))
 
@@ -387,14 +498,6 @@ def _pairs(iterable):
     a, b = itertools.tee(iterable)
     next(b, None)
     return zip(a, b)
-
-
-def daily_cost(pair_cost, stops):
-    return sum(pair_cost[i, j] for i, j in _pairs(stops[stops > -1]))
-
-
-def total_cost(pair_cost, state):
-    return sum(daily_cost(pair_cost, stops) for stops in state)
 
 
 if __name__ == "__main__":

@@ -4,3 +4,4 @@ matplotlib
 click
 black
 requests
+humanize

@@ -7,7 +7,7 @@ example-bing-driving-distance:
 		--annealing-param-decay=0.994 \
 		--bing-maps-api-key=${BING_MAPS_API_KEY} \
 		--bing-travel-mode=driving \
-		--bing-cost=distance
+		--cost-type=distance
 
 example-bing-driving-time:
 	python3 solve.py \
@@ -17,17 +17,19 @@ example-bing-driving-time:
 		--annealing-param-decay=0.994 \
 		--bing-maps-api-key=${BING_MAPS_API_KEY} \
 		--bing-travel-mode=driving \
-		--cost-property=time
+		--cost-type=time
 
 example-rymans-data:
 	python3 solve.py \
 		--site-data=sites.csv \
 		--days=7 \
 		--max-stops-per-day=3 \
-		--annealing-param-decay=0.991 \
+		--annealing-param-decay=0.993 \
 		--bing-maps-api-key=${BING_MAPS_API_KEY} \
 		--bing-travel-mode=driving \
-		--cost-property=time
+		--cost-type=time \
+		--start-datetime="2022-08-08T08:00:00" \
+		--ignore-node-costs
 
 format:
 	black .
