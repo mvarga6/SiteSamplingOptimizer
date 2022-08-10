@@ -29,7 +29,7 @@ example-rymans-data:
 		--bing-travel-mode=driving \
 		--cost-type=time \
 		--start-datetime="2022-08-08T08:00:00" \
-		--ignore-node-costs
+		--ignore-node-cost
 
 format:
 	black .

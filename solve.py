@@ -301,13 +301,11 @@ def find_optimal_scheduling(
 
     for i, annealing_param in enumerate(annealing_schedule):
         for (day1, stop1, day2, stop2) in zip(*rand_dofs()):
-            C1 = daily_cost(C_edge, C_node, state[day1]) + daily_cost(
-                C_edge, C_node, state[day2]
-            )
+            C1 = daily_cost(C_edge, C_node, state[day1])
+            C1 += daily_cost(C_edge, C_node, state[day2])
             swap(day1, stop1, day2, stop2)
-            C2 = daily_cost(C_edge, C_node, state[day1]) + daily_cost(
-                C_edge, C_node, state[day2]
-            )
+            C2 = daily_cost(C_edge, C_node, state[day1])
+            C2 += daily_cost(C_edge, C_node, state[day2])
             dC = C2 - C1
 
             # Stochastically keep (+) change in E (total cost).
