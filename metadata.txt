@@ -1,0 +1,44 @@
+
+[general]
+name=Site Schedule Optimization
+qgisMinimumVersion=3.0
+description=Finds an optimal multi-day schedule for traveling to a set of locations.
+version=0.1
+author=Mike Varga
+email=mvarga6@kent.edu
+
+about=A tool to find an optimal multi-day schedule for traveling to a set of locations. It is akin to solving a partitioned traveling salesman problem w/ constraints. The tool uses simulated annealing (Metropolis-Hastings algorithm) to converge an time-optimized schedule" with provides: 1. Which sites should be visited on what day. 2. Which order to visit those sites within the day. The problem is constrained by: 1. A maximum amount of time allotted per day. 2. The starting and endpoint position of each day (optionally). Several python depedencies are required but can be installed using the plugin itself into an isolated location.
+
+tracker=https://github.com/mvarga6/SiteScheduleOptimization/issues
+repository=https://github.com/mvarga6/SiteScheduleOptimization
+# End of mandatory metadata
+
+# Recommended items:
+
+hasProcessingProvider=no
+# Uncomment the following line and add your changelog:
+# changelog=
+
+# Tags are comma separated with spaces allowed
+tags=python
+
+homepage=https://github.com/mvarga6/SiteSamplingOptimizer
+category=Vector
+icon=icon.png
+# experimental flag
+experimental=True
+
+# deprecated flag (applies to the whole plugin, not just a single version)
+deprecated=False
+
+# Since QGIS 3.8, a comma separated list of plugins to be installed
+# (or upgraded) can be specified.
+# Check the documentation for more information.
+# plugin_dependencies=
+
+Category of the plugin: Raster, Vector, Database or Web
+# category=
+
+# If the plugin can run on QGIS Server.
+server=False
+

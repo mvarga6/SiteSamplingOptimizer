@@ -1,0 +1,5 @@
+<RCC>
+    <qresource prefix="/plugins/site_schedule_optimization" >
+        <file>icon.png</file>
+    </qresource>
+</RCC>

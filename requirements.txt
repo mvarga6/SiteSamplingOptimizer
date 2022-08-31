@@ -2,5 +2,5 @@ numpy
 pandas
 matplotlib
 click
-black
 requests
+humanize

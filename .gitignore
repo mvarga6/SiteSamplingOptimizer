@@ -1,2 +1,6 @@
 .env
 .venv
+.cache
+.vscode
+**/__pycache__
+zip_build/
