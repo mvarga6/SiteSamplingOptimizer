@@ -22,17 +22,21 @@ More can be found here:
 
 The plugin is available in the public QGIS plugin repository (WILL ADD LINK).
 
-Or if you are more developer savy, you can install the plugin yourselv from this source code.
+Or if you are more developer savy, you can install the plugin yourself from this source code.
 
 ### Requirements
 
-The tool contains functionality to install its own python dependencies into an isolated location inside the QGIS plugin installation directory. This is the recommended way to install dependencies, as we can ensure the proper versions are available. But to install those, **`pip` is required to be available on your system** (by the python QGIS uses).
+The plugin depends on other python packages.
+
+- Numpy
+
+Installing python packages is specific to the platform you run the QGIS on. For details, https://packaging.python.org/en/latest/tutorials/installing-packages/. The set of required python packages can also be found in `requirements.qgis.txt`.
+
+<!-- The tool contains functionality to install its own python dependencies into an isolated location inside the QGIS plugin installation directory. This is the recommended way to install dependencies, as we can ensure the proper versions are available. But to install those, **`pip` is required to be available on your system** (by the python QGIS uses).
 
 Install Pip: https://pip.pypa.io/en/stable/installation/
 
-When you run the plugin, it will detect when you have not installed the required python dependences and provide a dialog which you can use to install them. Please refer to the Python error or SiteScheduleOptimization logs if you encounter errors, and include those when creating issues on this repository.
-
-The set of required python packages can be found in `requirements.qgis.txt`.
+When you run the plugin, it will detect when you have not installed the required python dependences and provide a dialog which you can use to install them. Please refer to the Python error or SiteScheduleOptimization logs if you encounter errors, and include those when creating issues on this repository. -->
 
 ### Installing from Source
 
