@@ -34,7 +34,6 @@ from qgis.PyQt.QtGui import QIcon
 from .dependency_installation_dialog import (
     DEPENDENCIES_VERSION,
     DEPENDENCIES_VERSION_FILE,
-    DependencyInstallationDialog,
 )
 
 # Initialize Qt resources from file resources.py
@@ -173,7 +172,7 @@ class SiteScheduleOptimization:
     def initGui(self):
         """Create the menu entries and toolbar icons inside the QGIS GUI."""
 
-        icon_path = ":/plugins/site_schedule_optimization/icon.png"
+        icon_path = os.path.join(self.plugin_dir, "icon.png")
         self.add_action(
             icon_path,
             text=self.tr("Generate Optimized Schedule"),
@@ -197,32 +196,35 @@ class SiteScheduleOptimization:
 
         self.disableGuiActions()
 
+        valid_dependencies = self.test_dependencies()
+
+        # TODO: enable installation of packages directly with plugin
         # Check if we need to launch the dependency installation workflow
-        valid_dependencies = self.valid_dependencies()
-        if not valid_dependencies:
-            self.install_dlg = DependencyInstallationDialog(self.iface)
-            self.install_dlg.show()
-            self.install_dlg.exec_()
-            valid_dependencies = self.install_dlg.success
-        else:
-            QgsMessageLog.logMessage(
-                "Up-to-date dependencies found.",
-                MESSAGE_CATEGORY,
-                level=Qgis.Info,
-            )
-
-        # Create the dialog with elements (after translation) and keep reference
-        # Only create GUI ONCE in callback, so that it will only load when the
-        # plugin is started
-        if self.first_start:
-            self.first_start = False
-            from .site_schedule_optimization_dialog import (
-                SiteScheduleOptimizationDialog,
-            )
-
-            self.dlg = SiteScheduleOptimizationDialog()
+        # valid_dependencies = self.valid_dependencies()
+        # if not valid_dependencies:
+        #     self.install_dlg = DependencyInstallationDialog(self.iface)
+        #     self.install_dlg.show()
+        #     self.install_dlg.exec_()
+        #     valid_dependencies = self.install_dlg.success
+        # else:
+        #     QgsMessageLog.logMessage(
+        #         "Up-to-date dependencies found.",
+        #         MESSAGE_CATEGORY,
+        #         level=Qgis.Info,
+        #     )
 
         if valid_dependencies:
+            # Create the dialog with elements (after translation) and keep
+            # reference Only create GUI ONCE in callback, so that it will
+            # only load when the plugin is started
+            if self.first_start:
+                self.first_start = False
+                from .site_schedule_optimization_dialog import (
+                    SiteScheduleOptimizationDialog,
+                )
+
+                self.dlg = SiteScheduleOptimizationDialog()
+
             self.dlg.reset()
             self.dlg.show()
             result = self.dlg.exec_()
@@ -232,20 +234,40 @@ class SiteScheduleOptimization:
                 pass
 
         else:
-            QgsMessageLog.logMessage(
-                "Cannot run without depdendencies",
-                MESSAGE_CATEGORY,
-                level=Qgis.Critical,
+            msg = (
+                "One or more python dependencies were not found. "
+                + f"Check {MESSAGE_CATEGORY} logs."
             )
+            QgsMessageLog.logMessage(msg, MESSAGE_CATEGORY, level=Qgis.Critical)
             self.iface.messageBar().pushMessage(
-                "Error", "Cannot run without depdendencies", level=Qgis.Critical
+                "Error", msg, level=Qgis.Critical
             )
 
         self.enableGuiActions()
 
+    def test_dependencies(self):
+        """Tests if required packages can be imported."""
+        success = True
+        try:
+            import numpy
+
+            QgsMessageLog.logMessage(
+                f"Numpy {numpy.__version__} found.",
+                MESSAGE_CATEGORY,
+                level=Qgis.Info,
+            )
+        except ModuleNotFoundError:
+            success = False
+            msg = "Numpy package not found. Please install."
+            QgsMessageLog.logMessage(msg, MESSAGE_CATEGORY, level=Qgis.Critical)
+
+        return success
+
     def valid_dependencies(self):
         """Checks whether or not valid valid python module
         dependencies are installed.
+
+        NOTE: Not currently utilized.
         """
         self.plugin_dir = os.path.dirname(__file__)
         deps_version_file = os.path.join(
